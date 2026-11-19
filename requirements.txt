@@ -3,6 +3,7 @@ pydantic==2.10.3
 python-dotenv==1.0.1
 langgraph==0.2.60
 langchain-core==0.3.28
+psycopg[binary]==3.2.3
 
 pytest==8.3.4
 ruff==0.8.4

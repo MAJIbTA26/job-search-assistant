@@ -3,10 +3,14 @@
 Використання:
     python cli.py
     (встав текст вакансії, завершуй порожнім рядком двічі або Ctrl+D)
+
+Якщо PostgreSQL недоступний (контейнер не запущено) - CLI все одно працює,
+просто без збереження в історію (бачиш попередження, результат показується як завжди).
 """
 
 import sys
 
+import db
 from orchestrator import run
 
 
@@ -15,12 +19,30 @@ def read_multiline() -> str:
     return sys.stdin.read()
 
 
+def _connect_to_db():
+    """Повертає з'єднання з базою або None, якщо база недоступна (не блокує роботу CLI)."""
+    try:
+        conn = db.get_connection()
+        db.init_db(conn)
+        return conn
+    except db.DatabaseError as e:
+        print(f"[попередження] База даних недоступна, історія не зберігається: {e}")
+        return None
+
+
 def main() -> None:
     raw_text = read_multiline()
+    conn = _connect_to_db()
+
+    if conn is not None and raw_text.strip() and db.already_processed(conn, raw_text):
+        print("\n[примітка] Цю вакансію вже аналізували раніше (бачив однаковий текст).")
+
     result = run(raw_text)
 
-    if result.get("error"):
+    if result.get("error") and result.get("vacancy") is None:
         print(f"\nПомилка: {result['error']}")
+        if conn is not None:
+            conn.close()
         return
 
     vacancy = result["vacancy"]
@@ -35,8 +57,18 @@ def main() -> None:
     print(f"Англійська: {vacancy.english_level_required or 'не вказано'}")
 
     analysis = result.get("analysis")
+    cover_letter_path = result.get("cover_letter_path")
+
+    if conn is not None:
+        try:
+            db.save_result(conn, raw_text, vacancy, analysis, cover_letter_path)
+        except db.DatabaseError as e:
+            print(f"[попередження] Не вдалося зберегти в історію: {e}")
+        finally:
+            conn.close()
+
     if analysis is None:
-        print("\nАналіз не виконано (помилка Analyst-агента).")
+        print(f"\nАналіз не виконано: {result.get('error') or 'помилка Analyst-агента'}")
         return
 
     verdict_labels = {
@@ -57,7 +89,6 @@ def main() -> None:
         print("\nЛист не пишемо - вердикт 'пропустити'.")
         return
 
-    cover_letter_path = result.get("cover_letter_path")
     if cover_letter_path is None:
         print(f"\nЛист не згенеровано: {result.get('error') or 'невідома помилка Executor-агента'}")
         return
