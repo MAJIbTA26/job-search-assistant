@@ -53,6 +53,17 @@ def main() -> None:
         print(f"Застереження: {', '.join(analysis.key_concerns)}")
     print(f"Пояснення: {analysis.reasoning}")
 
+    if analysis.verdict == "skip":
+        print("\nЛист не пишемо - вердикт 'пропустити'.")
+        return
+
+    cover_letter_path = result.get("cover_letter_path")
+    if cover_letter_path is None:
+        print(f"\nЛист не згенеровано: {result.get('error') or 'невідома помилка Executor-агента'}")
+        return
+
+    print(f"\n--- Супровідний лист збережено: {cover_letter_path} ---")
+
 
 if __name__ == "__main__":
     main()

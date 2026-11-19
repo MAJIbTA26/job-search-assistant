@@ -65,3 +65,21 @@ class Analysis(AnalysisExtraction):
     """Повний результат аналізу: те, що оцінила LLM, плюс дані про саму вакансію."""
 
     vacancy_title: str = Field(description="Назва вакансії (для зручності, скопійовано з Vacancy)")
+
+
+class CoverLetterExtraction(BaseModel):
+    """Те, що LLM-Executor пише - чернетка супровідного листа обома мовами.
+
+    Без default-значень (та сама причина, що й в інших Extraction-моделях:
+    Gemini structured output відхиляє response_schema з полями, що мають 'default').
+    """
+
+    cover_letter_en: str = Field(description="Супровідний лист англійською, короткий і професійний (3-5 абзаців)")
+    cover_letter_uk: str = Field(description="Той самий лист українською (не буквальний переклад, а природний стиль)")
+
+
+class CoverLetter(CoverLetterExtraction):
+    """Повний результат роботи Executor: лист плюс дані про вакансію (для імені файлу/заголовка)."""
+
+    vacancy_title: str = Field(description="Назва вакансії (скопійовано з Vacancy)")
+    company: str = Field(description="Назва компанії (скопійовано з Vacancy)")
