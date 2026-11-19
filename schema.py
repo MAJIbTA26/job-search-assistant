@@ -33,3 +33,35 @@ class Vacancy(VacancyExtraction):
     """Повний структурований опис вакансії: те, що витягла LLM, плюс оригінальний текст."""
 
     source_text: str = Field(description="Оригінальний текст вакансії без змін (для аудиту)")
+
+
+class Verdict:
+    """Можливі вердикти Analyst-агента."""
+
+    APPLY = "apply"
+    MAYBE = "maybe"
+    SKIP = "skip"
+
+
+class AnalysisExtraction(BaseModel):
+    """Те, що LLM-Analyst витягує при порівнянні вакансії з профілем.
+
+    Без default-значень (та сама причина, що й у VacancyExtraction: Gemini
+    structured output відхиляє response_schema з полями, що мають 'default').
+    """
+
+    match_percentage: int = Field(description="Оцінка збігу профілю з вакансією, від 0 до 100")
+    verdict: str = Field(description="Один з трьох варіантів: 'apply', 'maybe' або 'skip'")
+    matched_skills: list[str] = Field(description="Навички з профілю, які прямо збігаються з вимогами вакансії")
+    missing_skills: list[str] = Field(description="Обов'язкові вимоги вакансії, яких немає в профілі")
+    key_concerns: list[str] = Field(
+        description="Головні причини, чому вакансія НЕ підходить (напр. 'потрібно 3+ роки комерційного досвіду, "
+        "у профілі 0'). Порожній список, якщо серйозних застережень немає"
+    )
+    reasoning: str = Field(description="Коротке (2-4 речення) пояснення вердикту простою мовою")
+
+
+class Analysis(AnalysisExtraction):
+    """Повний результат аналізу: те, що оцінила LLM, плюс дані про саму вакансію."""
+
+    vacancy_title: str = Field(description="Назва вакансії (для зручності, скопійовано з Vacancy)")

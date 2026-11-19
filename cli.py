@@ -34,6 +34,25 @@ def main() -> None:
     print(f"Мін. досвід (років): {vacancy.min_years_experience or 'не вказано'}")
     print(f"Англійська: {vacancy.english_level_required or 'не вказано'}")
 
+    analysis = result.get("analysis")
+    if analysis is None:
+        print("\nАналіз не виконано (помилка Analyst-агента).")
+        return
+
+    verdict_labels = {
+        "apply": "ВІДГУКНУТИСЬ",
+        "maybe": "МОЖНА СПРОБУВАТИ",
+        "skip": "ПРОПУСТИТИ",
+    }
+    print("\n--- Вердикт ---")
+    print(f"Збіг: {analysis.match_percentage}%")
+    print(f"Рішення: {verdict_labels.get(analysis.verdict, analysis.verdict)}")
+    print(f"Збігається: {', '.join(analysis.matched_skills) or '-'}")
+    print(f"Бракує: {', '.join(analysis.missing_skills) or '-'}")
+    if analysis.key_concerns:
+        print(f"Застереження: {', '.join(analysis.key_concerns)}")
+    print(f"Пояснення: {analysis.reasoning}")
+
 
 if __name__ == "__main__":
     main()
