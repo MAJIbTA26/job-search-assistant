@@ -43,6 +43,13 @@ class Verdict:
     SKIP = "skip"
 
 
+VERDICT_LABELS = {
+    Verdict.APPLY: "ВІДГУКНУТИСЬ",
+    Verdict.MAYBE: "МОЖНА СПРОБУВАТИ",
+    Verdict.SKIP: "ПРОПУСТИТИ",
+}
+
+
 class AnalysisExtraction(BaseModel):
     """Те, що LLM-Analyst витягує при порівнянні вакансії з профілем.
 

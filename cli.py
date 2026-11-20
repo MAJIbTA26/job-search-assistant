@@ -1,8 +1,9 @@
-"""Простий запуск з командного рядка: встав текст вакансії, отримай структурований результат.
+"""Простий запуск з командного рядка: встав текст вакансії (або посилання на неї),
+отримай структурований результат.
 
 Використання:
     python cli.py
-    (встав текст вакансії, завершуй порожнім рядком двічі або Ctrl+D)
+    (встав текст вакансії АБО посилання на неї, завершуй Ctrl+D (Windows: Ctrl+Z, Enter))
 
 Якщо PostgreSQL недоступний (контейнер не запущено) - CLI все одно працює,
 просто без збереження в історію (бачиш попередження, результат показується як завжди).
@@ -12,10 +13,12 @@ import sys
 
 import db
 from orchestrator import run
+from schema import VERDICT_LABELS, Verdict
+from url_fetcher import FetchError, fetch_page_text, looks_like_url
 
 
 def read_multiline() -> str:
-    print("Встав текст вакансії, потім Ctrl+D (Windows: Ctrl+Z, Enter):")
+    print("Встав текст вакансії АБО посилання на неї, потім Ctrl+D (Windows: Ctrl+Z, Enter):")
     return sys.stdin.read()
 
 
@@ -32,6 +35,19 @@ def _connect_to_db():
 
 def main() -> None:
     raw_text = read_multiline()
+
+    if looks_like_url(raw_text):
+        print("Завантажую сторінку за посиланням...")
+        try:
+            raw_text = fetch_page_text(raw_text.strip())
+        except FetchError as e:
+            print(
+                f"\nНе вдалося завантажити вакансію за посиланням ({e}).\n"
+                "Деякі сайти (напр. LinkedIn) блокують прості запити або вимагають логін - "
+                "у такому разі скопіюй текст вакансії вручну і встав його."
+            )
+            return
+
     conn = _connect_to_db()
 
     if conn is not None and raw_text.strip() and db.already_processed(conn, raw_text):
@@ -71,21 +87,16 @@ def main() -> None:
         print(f"\nАналіз не виконано: {result.get('error') or 'помилка Analyst-агента'}")
         return
 
-    verdict_labels = {
-        "apply": "ВІДГУКНУТИСЬ",
-        "maybe": "МОЖНА СПРОБУВАТИ",
-        "skip": "ПРОПУСТИТИ",
-    }
     print("\n--- Вердикт ---")
     print(f"Збіг: {analysis.match_percentage}%")
-    print(f"Рішення: {verdict_labels.get(analysis.verdict, analysis.verdict)}")
+    print(f"Рішення: {VERDICT_LABELS.get(analysis.verdict, analysis.verdict)}")
     print(f"Збігається: {', '.join(analysis.matched_skills) or '-'}")
     print(f"Бракує: {', '.join(analysis.missing_skills) or '-'}")
     if analysis.key_concerns:
         print(f"Застереження: {', '.join(analysis.key_concerns)}")
     print(f"Пояснення: {analysis.reasoning}")
 
-    if analysis.verdict == "skip":
+    if analysis.verdict == Verdict.SKIP:
         print("\nЛист не пишемо - вердикт 'пропустити'.")
         return
 

@@ -1,9 +1,41 @@
-# Job Search Assistant (Multi-Agent, Stage 5)
+# Job Search Assistant (Multi-Agent, Stage 6)
 
-AI-агент, що допомагає аналізувати вакансії та готувати відгуки. Архітектура:
-Orchestrator (LangGraph) координує спеціалізованих агентів.
+AI-агент, що допомагає шукати і аналізувати вакансії та готувати відгуки.
+Архітектура: Orchestrator (LangGraph) координує спеціалізованих агентів.
 
-Зараз є три агенти:
+## Архітектура
+
+```mermaid
+flowchart TD
+    subgraph Джерела вакансій
+        A1[Встав текст у Telegram / cli.py]
+        A2[RSS-стрічка We Work Remotely<br/>перевіряється самим ботом]
+    end
+
+    A1 --> O
+    A2 --> O
+
+    subgraph "Orchestrator (LangGraph)"
+        O[researcher_node] -->|вакансія знайдена| AN[analyst_node]
+        O -->|помилка / порожній текст| END1((кінець))
+        AN -->|verdict apply/maybe| EX[executor_node]
+        AN -->|verdict skip| END2((кінець))
+        EX --> END3((кінець))
+    end
+
+    O -.Gemini.-> R[researcher.py]
+    AN -.Gemini + profile.json.-> AI[analyst.py]
+    EX -.Gemini.-> E[executor.py]
+
+    EX --> F[applications/*.txt<br/>лист EN+UK]
+    O --> DB[(PostgreSQL<br/>історія вакансій)]
+    AN --> DB
+    EX --> DB
+
+    AN -->|apply/maybe| TG[Telegram-повідомлення<br/>+ файл листа]
+```
+
+Три агенти:
 
 - **Researcher** — бере довільний текст вакансії та перетворює його у структуровані
   дані (назва, навички, рівень, вимоги до досвіду й англійської).
@@ -35,21 +67,53 @@ docker compose up -d
 ```
 
 Піднімає PostgreSQL у контейнері (порт 5434 — щоб не конфліктувати з
-Request Classifier, у якого PostgreSQL вже сидить на 5433). `cli.py` автоматично створює
-потрібну таблицю при першому запуску. Якщо база недоступна (контейнер не
-запущено) — `cli.py` все одно працює, просто без збереження в історію
-(побачиш попередження в консолі).
+Request Classifier, у якого PostgreSQL вже сидить на 5433). `cli.py`/`bot.py`
+автоматично створюють потрібну таблицю при першому запуску. Якщо база
+недоступна (контейнер не запущено) — обидва все одно працюють, просто без
+збереження в історію (побачиш попередження в консолі).
+
+## Telegram-бот
+
+Два режими роботи в одному процесі:
+
+1. **Встав текст вакансії або посилання на неї прямо в чат боту** — якщо це
+   посилання, бот сам завантажить сторінку і витягне текст (звичайний HTTP-запит,
+   без браузера — сайти з логіном чи JS-рендерингом, як LinkedIn, можуть не
+   відкритись, тоді встав текст вручну). Отримаєш структуру + вердикт + лист
+   (так само, як у `cli.py`).
+2. **Бот сам шукає вакансії**: періодично (кожні `CHECK_INTERVAL_HOURS` годин,
+   за замовчуванням 4) перевіряє офіційну RSS-стрічку remote-вакансій
+   ([We Work Remotely](https://weworkremotely.com/remote-job-rss-feed)) і сам
+   пише тобі в Telegram, якщо знайшов щось із вердиктом `apply` чи `maybe`
+   (разом із готовим листом). Інтервал можна змінити на ходу командою
+   `/interval <години>`, не перезапускаючи бота.
+
+Чому саме We Work Remotely, а не Djinni/DOU: ці українські борди не мають
+публічного RSS, парсити їх без дозволу — сіра зона. We Work Remotely сам надає
+RSS для таких цілей.
+
+Налаштування:
+
+1. Створи бота через [@BotFather](https://t.me/BotFather) (`/newbot`), встав токен
+   у `.env` як `TELEGRAM_BOT_TOKEN`.
+2. Запусти `python bot.py`, напиши боту `/start` — він покаже твій `chat_id`.
+3. Встав цей `chat_id` у `.env` як `TELEGRAM_CHAT_ID`, перезапусти бота —
+   тепер отримуватимеш автоматичні сповіщення.
+
+Команди бота: `/start`, `/stats` (статистика по історії), `/interval <години>`.
 
 ## Запуск
 
 ```
 pip install -r requirements.txt
-cp .env.example .env   # встав свій GEMINI_API_KEY
+cp .env.example .env   # встав свій GEMINI_API_KEY (і за бажанням Telegram-дані)
 docker compose up -d   # підняти базу (не обов'язково, але бажано)
-python cli.py
+python cli.py          # разовий запуск з консолі
+# або
+python bot.py          # Telegram-бот (працює, поки термінал відкритий)
 ```
 
-Встав текст вакансії, заверши вводом Ctrl+D (Windows: Ctrl+Z, Enter).
+Для `cli.py`: встав текст вакансії, заверши вводом Ctrl+D (Windows: Ctrl+Z, Enter).
 
 ## Тести
 
@@ -57,8 +121,8 @@ python cli.py
 pytest -v
 ```
 
-44 тести, LLM і база даних замокані (реальних викликів Gemini чи PostgreSQL
-при тестуванні немає).
+63 тести. LLM, база даних і мережа (RSS, завантаження сторінок) замокані —
+реальних викликів Gemini, PostgreSQL чи інтернету при тестуванні немає.
 
 ## Eval (перевірка якості Analyst)
 
@@ -79,7 +143,7 @@ python run_eval.py
 
 ## Структура
 
-- `schema.py` — Pydantic-моделі `Vacancy`, `Analysis`, `CoverLetter`
+- `schema.py` — Pydantic-моделі `Vacancy`, `Analysis`, `CoverLetter`, `VERDICT_LABELS`
 - `researcher.py` — агент: структурує текст через Gemini, retry + fallback-модель
 - `analyst.py` — агент: порівнює вакансію з профілем, retry + fallback-модель
 - `executor.py` — агент: пише супровідний лист (EN+UK) і зберігає у `applications/`
@@ -88,7 +152,11 @@ python run_eval.py
 - `orchestrator.py` — граф LangGraph: Researcher → Analyst → (Executor | кінець)
 - `db.py` — зберігає історію вакансій/рішень у PostgreSQL (окремо від агентів)
 - `docker-compose.yml` — контейнер PostgreSQL для історії
-- `cli.py` — запуск з командного рядка
+- `sources.py` — завантажує і парсить RSS-стрічку вакансій (We Work Remotely)
+- `url_fetcher.py` — завантажує текст вакансії за посиланням (коли кидають URL)
+- `messaging.py` — форматування текстів для Telegram (чисті функції, без SDK)
+- `bot.py` — Telegram-бот: ручний режим + автоматичний пошук за розкладом
+- `cli.py` — разовий запуск з командного рядка
 - `eval/cases.py` — набір вакансій з відомим правильним вердиктом (для eval)
 - `run_eval.py` — прогін eval-набору через справжній Gemini, виводить точність
 - `conftest.py` — порожній файл-маркер кореня проєкту для pytest
